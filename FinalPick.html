@@ -1373,9 +1373,10 @@ function renderSheet(id){
         </div>
         ${(typeof CLOUD_USER==="undefined"||!CLOUD_USER)?`<div class="muted" style="font-size:11px;margin-top:7px">Posting as guest won't save it. <span id="cLogin" style="color:var(--accent);cursor:pointer;font-weight:600">Log in</span> to post &amp; keep it.</div>`:''}
       </div>`:''}
-      <div style="display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap">
-        <span class="chip ${sheetVerif?'on':''}" id="shVerif" style="padding:5px 11px;font-size:11px">✓ Verified only${hiddenSpam>0&&sheetVerif?` · ${hiddenSpam} hidden`:''}</span>
-        <span class="chip ${STATE.autoHighlight?'on':''}" id="shAuto" style="padding:5px 11px;font-size:11px">⭐ Auto-highlight</span></div>
+      ${c.comments.length?`<div style="display:flex;align-items:center;gap:8px;margin:10px 2px;padding-top:10px;border-top:1px solid var(--line);flex-wrap:wrap">
+        <span class="muted" style="font-size:10px;font-weight:800;letter-spacing:.04em">VIEW</span>
+        <span class="chip ${sheetVerif?'on':''}" id="shVerif" style="padding:5px 11px;font-size:11px">🔍 Hide flagged${hiddenSpam>0&&sheetVerif?` · ${hiddenSpam} hidden`:''}</span>
+        <span class="chip ${STATE.autoHighlight?'on':''}" id="shAuto" style="padding:5px 11px;font-size:11px">⭐ Auto-highlight</span></div>`:''}
       ${hiBox}
       ${cRows||(hiIdx!=null?'':`<div class="muted" style="font-size:13px">No comments yet — be the first.</div>`)}
       ${spoilO.length?`<div style="margin-top:12px;border-top:1px dashed var(--line);padding-top:12px"><button class="btn secondary" id="shSpoil" style="padding:11px">${sheetSpoil?'🙈 Hide spoilers':`👀 Show ${spoilO.length} spoiler comment${spoilO.length>1?'s':''}`}</button>${sheetSpoil?`<div style="margin-top:11px">${spoilO.map(o=>commentHTML(o.x)).join("")}</div>`:''}</div>`:''}
@@ -1925,7 +1926,7 @@ function commentsAccordion(id){
       <span id="cmtChev" style="color:var(--muted);font-size:13px;transition:transform .2s;transform:rotate(${cardCommentsOpen?180:0}deg)">▾</span>
     </div>
     ${cardCommentsOpen?`<div class="fadein" style="margin-top:10px">
-      <div class="chip ${verifiedOnly?'on':''}" id="cmtVerif" style="display:inline-flex;align-items:center;gap:5px;padding:5px 11px;font-size:11px;margin-bottom:10px">✓ Verified only${hiddenSpam>0&&verifiedOnly?` · ${hiddenSpam} hidden`:''}</div>
+      <div class="chip ${verifiedOnly?'on':''}" id="cmtVerif" style="display:inline-flex;align-items:center;gap:5px;padding:5px 11px;font-size:11px;margin-bottom:10px">🔍 Hide flagged${hiddenSpam>0&&verifiedOnly?` · ${hiddenSpam} hidden`:''}</div>
       ${clean.length?clean.map(x=>commentHTML(x)).join(""):`<div class="muted" style="font-size:13px">No comments yet — be the first.</div>`}
       ${spoil.length?`<div style="margin-top:10px;border-top:1px dashed var(--line);padding-top:10px">
         <button class="btn secondary" id="cmtSpoil" style="padding:10px">${cardSpoilers?'🙈 Hide spoilers':`👀 Show ${spoil.length} spoiler comment${spoil.length>1?'s':''}`}</button>
@@ -2953,7 +2954,7 @@ function renderMovieDetail(id){
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
         <b style="font-size:14px">💬 Comments</b><button class="ghost" id="addComment">+ Comment</button></div>
       <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;flex-wrap:wrap">
-        <span class="chip ${verifiedOnly?'on':''}" id="dVerif" style="padding:5px 11px;font-size:11px">✓ Verified only${hiddenSpam>0&&verifiedOnly?` · ${hiddenSpam} hidden`:''}</span>
+        <span class="chip ${verifiedOnly?'on':''}" id="dVerif" style="padding:5px 11px;font-size:11px">🔍 Hide flagged${hiddenSpam>0&&verifiedOnly?` · ${hiddenSpam} hidden`:''}</span>
         <span class="chip ${STATE.autoHighlight?'on':''}" id="dAuto" style="padding:5px 11px;font-size:11px">⭐ Auto-highlight</span></div>
       ${hiIdx!=null?`<div class="muted" style="font-size:11px;font-weight:700;letter-spacing:.4px;margin:2px 2px 6px">⭐ HIGHLIGHTED · ${pinnedIdx!=null?'pinned by you':'top comment'}</div>
         <div style="border:1px solid #3b8cff66;border-radius:12px;padding:0 11px;background:#3b8cff14;margin-bottom:12px;position:relative">${commentHTML(c.comments[hiIdx])}
