@@ -3580,15 +3580,13 @@ function openNav(){
     <button class="btn secondary" id="navNotifs" style="margin-bottom:14px;display:flex;align-items:center;justify-content:center;gap:8px">🔔 Notifications${NOTIF.unread>0?`<span style="background:#ff3b5c;color:#fff;font-size:11px;font-weight:800;border-radius:999px;padding:1px 8px">${NOTIF.unread>9?'9+':NOTIF.unread}</span>`:''}</button>
     <div class="muted" style="font-size:12px;font-weight:700;margin:0 2px 12px">GO TO…</div>
     <div class="navgrid">${grid}</div>
-    ${(typeof CLOUD_ADMIN!=="undefined"&&CLOUD_ADMIN)?`<button class="btn" id="navAdmin" style="margin-top:14px;background:linear-gradient(135deg,#7c3aed,#22d3ee);color:#0a0a12">🛠️ Admin panel</button>`:''}
-    <button class="btn" id="navAccount" style="margin-top:${(typeof CLOUD_ADMIN!=="undefined"&&CLOUD_ADMIN)?'10':'14'}px">${CLOUD_USER?("👤 "+esc((cloudEmail()||"Account"))):"👤 Log in / Sign up"}</button>
+    <button class="btn" id="navAccount" style="margin-top:14px">${CLOUD_USER?("👤 "+esc((cloudEmail()||"Account"))):"👤 Log in / Sign up"}</button>
     <button class="btn" id="navKids" style="margin-top:10px;background:linear-gradient(135deg,#ff8a5b,#ffd23f);color:#3a1d00">🧸 Kids Mode</button></div>`;
   sheet.classList.remove("hidden");
   const back=document.getElementById("navback"); back.classList.remove("hidden");
   requestAnimationFrame(()=>{ sheet.classList.add("open"); back.classList.add("open"); });
   sheet.querySelectorAll("[data-go]").forEach(el=>el.onclick=()=>navGo(el.dataset.go));
   const nnt=document.getElementById("navNotifs"); if(nnt) nnt.onclick=()=>{ closeNav(); renderNotifs(); };
-  const nad=document.getElementById("navAdmin"); if(nad) nad.onclick=()=>{ closeNav(); renderAdmin(); };
   const ng=document.getElementById("navGuest"); if(ng) ng.onclick=()=>{ closeNav(); renderAccount(); };
   const na=document.getElementById("navAccount"); if(na) na.onclick=()=>{ closeNav(); renderAccount(); };
   const nk=document.getElementById("navKids"); if(nk) nk.onclick=()=>{ closeNav(); openKidsMode(); };
@@ -3798,11 +3796,6 @@ async function notifWeeklyNudge(){
     localStorage.setItem("finalpick.lastNudge",String(Date.now()));
   }catch(e){}
 }
-// admin: broadcast an announcement to everyone
-async function notifBroadcast(title,body){
-  if(!SB||!CLOUD_ADMIN) return {error:"not admin"};
-  try{ const {error}=await SB.from("announcements").insert({ title, body, created_by:CLOUD_USER.id }); return {error}; }catch(e){ return {error:e}; }
-}
 // ---- OUR MOVIE CACHE (build our own catalog; load from our DB first, refresh from TMDb after) ----
 async function getCachedTitle(tmdbId){
   if(!SB||!tmdbId) return null;
@@ -3871,97 +3864,6 @@ async function dbFlagComment(commentDbId){
 async function cloudSignUp(email,pass){ if(!SB) return {error:"offline"}; const {data,error}=await SB.auth.signUp({email,password:pass}); if(!error&&data&&data.session&&data.user){ CLOUD_USER=data.user; } return {data,error}; }
 async function cloudSignIn(email,pass){ if(!SB) return {error:"offline"}; const {data,error}=await SB.auth.signInWithPassword({email,password:pass}); if(!error&&data.user){ CLOUD_USER=data.user; await pullCloud(); pushCloud(); notifWeeklyNudge(); notifLoad(); } return {data,error}; }
 async function cloudSignOut(){ if(!SB) return; await SB.auth.signOut(); CLOUD_USER=null; CLOUD_ADMIN=false; notifLoad(); if(typeof renderTab==="function") renderTab(); }
-// ---- ADMIN (power user): review corrections + publish title fixes ----
-const OVR_FIELDS=[["overview","Description"],["provider","Streaming service"],["free","Free to watch (yes/no)"],["genre","Genre/rating"],["title","Title"]];
-async function adminLoadCorrections(){ if(!SB||!CLOUD_ADMIN) return []; try{ const {data}=await SB.from("corrections").select("*").eq("status","open").order("created_at",{ascending:false}).limit(50); return data||[]; }catch(e){ return []; } }
-async function adminResolve(corr, accept){
-  if(!SB||!CLOUD_ADMIN) return;
-  try{
-    if(accept){
-      let val=prompt(`Correct value for "${corr.field}" on tmdb #${corr.tmdb_id}:`, corr.note||"");
-      if(val===null) return;
-      await SB.from("title_overrides").upsert({ tmdb_id:corr.tmdb_id, field:corr.field, corrected_value:{value:val}, confidence:1 });
-    }
-    await SB.from("corrections").update({ status: accept?"confirmed":"rejected" }).eq("id",corr.id);
-    toast(accept?"✅ Fix published":"Dismissed"); renderAdmin();
-  }catch(e){ toast("Couldn't save — "+(e.message||e)); }
-}
-async function adminEditTitle(){
-  if(!SB||!CLOUD_ADMIN) return;
-  const idr=prompt("TMDb id of the title to edit (the number in its URL):"); if(!idr) return;
-  const tmdb=+idr.replace(/\D/g,""); if(!tmdb){ toast("Enter a numeric TMDb id."); return; }
-  const field=prompt("Which field? overview / provider / free / genre / title","overview"); if(!field) return;
-  const val=prompt("New value:"); if(val===null) return;
-  try{ await SB.from("title_overrides").upsert({ tmdb_id:tmdb, field:field.trim(), corrected_value:{value:val}, confidence:1 }); toast("✅ Saved — live for everyone."); }
-  catch(e){ toast("Couldn't save — "+(e.message||e)); }
-}
-async function adminCount(table){ try{ const {count}=await SB.from(table).select("*",{count:"exact",head:true}); return count==null?"—":count; }catch(e){ return "—"; } }
-async function adminStats(){
-  const [users,comments,searches,events]=await Promise.all([adminCount("profiles"),adminCount("comments"),adminCount("search_history"),adminCount("events")]);
-  let open="—"; try{ const {count}=await SB.from("corrections").select("*",{count:"exact",head:true}).eq("status","open"); open=count==null?0:count; }catch(e){}
-  return {users,comments,searches,events,open};
-}
-async function adminRecentComments(){ try{ const {data}=await SB.from("comments").select("*").order("created_at",{ascending:false}).limit(25); return data||[]; }catch(e){ return []; } }
-async function adminDeleteComment(cid){ if(!confirm("Remove this comment for everyone?")) return; try{ await SB.from("comments").delete().eq("id",cid); toast("🗑️ Comment removed"); renderAdmin(); }catch(e){ toast("Couldn't delete — "+(e.message||e)); } }
-async function adminRecentSearches(){ try{ const {data}=await SB.from("search_history").select("query,chosen_tmdb_id,created_at").order("created_at",{ascending:false}).limit(25); return data||[]; }catch(e){ return []; } }
-async function adminOverrides(){ try{ const {data}=await SB.from("title_overrides").select("*").order("updated_at",{ascending:false}).limit(30); return data||[]; }catch(e){ return []; } }
-async function adminUndoOverride(tmdb_id,field){ try{ await SB.from("title_overrides").delete().eq("tmdb_id",tmdb_id).eq("field",field); toast("↩️ Fix removed"); renderAdmin(); }catch(e){ toast("Couldn't undo — "+(e.message||e)); } }
-let adminTab="reports";
-async function renderAdmin(){
-  if(!isAdmin()){ toast("Admins only."); TAB="pick"; renderTab(); return; }
-  app.innerHTML=`<h2 style="margin:14px 2px 2px">🛠️ Admin</h2>
-    <p class="sub">Power-user control — everything a normal account can do, plus the tools below.</p>
-    <div id="adStats" class="kpi" style="flex-wrap:wrap;gap:8px;margin-bottom:12px"><div class="muted" style="font-size:12px;padding:8px">Loading stats…</div></div>
-    <button class="btn secondary" id="adEdit" style="margin-bottom:12px">✏️ Edit a title's info (publish live)</button>
-    <div class="seg" id="adSeg" style="margin-bottom:12px">
-      <button data-at="reports" class="${adminTab==='reports'?'on':''}">🚩 Reports</button>
-      <button data-at="comments" class="${adminTab==='comments'?'on':''}">💬 Comments</button>
-      <button data-at="searches" class="${adminTab==='searches'?'on':''}">🔎 Searches</button>
-      <button data-at="fixes" class="${adminTab==='fixes'?'on':''}">🩹 Fixes</button>
-      <button data-at="broadcast" class="${adminTab==='broadcast'?'on':''}">📣 Broadcast</button>
-    </div>
-    <div id="adBody"><div class="muted" style="font-size:13px;padding:10px 2px">Loading…</div></div>`;
-  app.querySelector("#adEdit").onclick=adminEditTitle;
-  app.querySelectorAll("[data-at]").forEach(el=>el.onclick=()=>{ adminTab=el.dataset.at; renderAdmin(); });
-  adminStats().then(s=>{ const st=app.querySelector("#adStats"); if(st) st.innerHTML=`
-    <div class="k"><b>${s.users}</b><span>users</span></div>
-    <div class="k"><b>${s.events}</b><span>actions</span></div>
-    <div class="k"><b>${s.comments}</b><span>comments</span></div>
-    <div class="k"><b>${s.searches}</b><span>searches</span></div>
-    <div class="k" style="${s.open?'border-color:#ffb45488':''}"><b>${s.open}</b><span>open reports</span></div>`; });
-  const body=app.querySelector("#adBody"); if(!body) return;
-  if(adminTab==="reports"){
-    const list=await adminLoadCorrections();
-    body.innerHTML=list.length?list.map((c,i)=>`<div class="wl-item" style="align-items:flex-start"><div style="min-width:0;flex:1"><div class="t">🎬 tmdb #${c.tmdb_id} · <b>${esc(c.field)}</b></div><div class="s">${esc(c.note||"(no note)")}</div></div><div style="display:flex;gap:6px"><button class="ghost" data-acc="${i}" style="padding:5px 10px;font-size:11px;color:var(--good)">✓ Accept</button><button class="ghost" data-rej="${i}" style="padding:5px 10px;font-size:11px">✕ Dismiss</button></div></div>`).join(""):`<div class="muted" style="font-size:13px;padding:6px 2px">No open reports. All clear. 🎉</div>`;
-    body.querySelectorAll("[data-acc]").forEach(el=>el.onclick=()=>adminResolve(list[+el.dataset.acc],true));
-    body.querySelectorAll("[data-rej]").forEach(el=>el.onclick=()=>adminResolve(list[+el.dataset.rej],false));
-  } else if(adminTab==="comments"){
-    const list=await adminRecentComments();
-    body.innerHTML=list.length?list.map(c=>`<div class="wl-item" style="align-items:flex-start"><div style="min-width:0;flex:1"><div class="t" style="font-weight:500;white-space:normal">${c.is_spoiler?'⚠ ':''}${esc((c.body||"").slice(0,140))}</div><div class="s">tmdb #${c.tmdb_id}${c.parent_id?' · reply':''}</div></div><button class="ghost" data-del="${c.id}" style="padding:5px 10px;font-size:11px;color:#ff8a8a">🗑️</button></div>`).join(""):`<div class="muted" style="font-size:13px;padding:6px 2px">No comments yet.</div>`;
-    body.querySelectorAll("[data-del]").forEach(el=>el.onclick=()=>adminDeleteComment(el.dataset.del));
-  } else if(adminTab==="searches"){
-    const list=await adminRecentSearches();
-    body.innerHTML=list.length?`<p class="sub" style="margin:0 2px 8px">What people search — this is what trains the engine over time.</p>`+list.map(s=>`<div class="wl-item"><div style="min-width:0;flex:1"><div class="t">🔎 ${esc(s.query||"")}</div><div class="s">${s.chosen_tmdb_id?('→ opened tmdb #'+s.chosen_tmdb_id):'no result opened'}</div></div></div>`).join(""):`<div class="muted" style="font-size:13px;padding:6px 2px">No searches logged yet.</div>`;
-  } else if(adminTab==="fixes"){
-    const list=await adminOverrides();
-    body.innerHTML=list.length?list.map(o=>{const v=(o.corrected_value&&o.corrected_value.value!=null)?o.corrected_value.value:JSON.stringify(o.corrected_value);return `<div class="wl-item" style="align-items:flex-start"><div style="min-width:0;flex:1"><div class="t">🎬 tmdb #${o.tmdb_id} · <b>${esc(o.field)}</b></div><div class="s">${esc(String(v).slice(0,90))}</div></div><button class="ghost" data-undo="${o.tmdb_id}|${esc(o.field)}" style="padding:5px 10px;font-size:11px">↩️ Undo</button></div>`;}).join(""):`<div class="muted" style="font-size:13px;padding:6px 2px">No published fixes yet.</div>`;
-    body.querySelectorAll("[data-undo]").forEach(el=>el.onclick=()=>{ const parts=el.dataset.undo.split("|"); adminUndoOverride(+parts[0],parts[1]); });
-  } else if(adminTab==="broadcast"){
-    let past=[]; try{ const {data}=await SB.from("announcements").select("*").order("created_at",{ascending:false}).limit(10); past=data||[]; }catch(e){}
-    body.innerHTML=`
-      <p class="sub" style="margin:0 2px 10px">Send an announcement to <b>everyone</b> — it appears in every user's 🔔 Notifications.</p>
-      <input id="bcTitle" type="text" placeholder="Title (e.g. 🎬 Movie night Friday!)" style="width:100%;background:#191c2b;border:1px solid var(--line);border-radius:11px;color:var(--ink);font-size:14px;padding:11px 12px;outline:none">
-      <textarea id="bcBody" placeholder="Message (optional)" rows="3" style="width:100%;margin-top:9px;background:#191c2b;border:1px solid var(--line);border-radius:11px;color:var(--ink);font-size:13.5px;padding:11px 12px;outline:none;resize:vertical"></textarea>
-      <button class="btn" id="bcSend" style="margin-top:10px">📣 Send to everyone</button>
-      <div id="bcMsg" class="muted" style="font-size:12px;margin-top:8px"></div>
-      ${past.length?`<div class="muted" style="font-size:12px;font-weight:700;margin:16px 2px 8px">RECENT</div>`+past.map(a=>`<div class="wl-item" style="align-items:flex-start"><div style="min-width:0;flex:1"><div class="t">📣 ${esc(a.title)}</div><div class="s">${esc((a.body||"").slice(0,90))}</div></div><button class="ghost" data-delann="${a.id}" style="padding:5px 10px;font-size:11px;color:#ff8a8a">🗑️</button></div>`).join(""):''}`;
-    const send=body.querySelector("#bcSend"), bm=body.querySelector("#bcMsg");
-    send.onclick=async()=>{ const t=body.querySelector("#bcTitle").value.trim(), b=body.querySelector("#bcBody").value.trim();
-      if(!t){ bm.textContent="Add a title first."; return; } bm.textContent="Sending…";
-      const r=await notifBroadcast(t,b); if(r.error){ bm.textContent="❌ "+(r.error.message||r.error); } else { toast("📣 Announcement sent"); renderAdmin(); } };
-    body.querySelectorAll("[data-delann]").forEach(el=>el.onclick=async()=>{ try{ await SB.from("announcements").delete().eq("id",+el.dataset.delann); toast("Deleted"); renderAdmin(); }catch(e){ toast("Couldn't delete"); } });
-  }
-}
 async function cloudInit(){
   if(!SB) return;
   try{ const {data}=await SB.auth.getSession(); if(data&&data.session){ CLOUD_USER=data.session.user; await pullCloud(); await notifWeeklyNudge(); } }catch(e){}
@@ -4028,3 +3930,4 @@ cloudInit();
 </script>
 </body>
 </html>
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              
