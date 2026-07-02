@@ -1233,21 +1233,33 @@ async function openMovieSheet(id){
   back.classList.remove("hidden"); sheet.classList.remove("hidden");
   requestAnimationFrame(()=>{ sheet.classList.add("open"); back.classList.add("open"); });
   let gg=document.getElementById("msGrab"); if(gg) gg.onclick=closeSheet;
-  try{
-    if(tmdbId==null){ const lm=MOVIE_BY_ID[key]; if(lm && tmdbReady()){ const mt=await fetchMeta(lm); tmdbId=mt?mt.tmdbId:null; } }
-    if(tmdbId!=null && tmdbReady()){
-      const d=await tmdbDetail(tmdbId); sheetD=d;
+  // resolve a tmdb id for local titles (needed for our cache + comments)
+  if(tmdbId==null){ const lm=MOVIE_BY_ID[key]; if(lm){ try{ if(tmdbReady()) { const mt=await fetchMeta(lm); tmdbId=mt?mt.tmdbId:null; } }catch(e){} } }
+  const rerender=()=>{ if(sheetId===key) renderSheet(key); };
+  if(tmdbId!=null){
+    // 1) OUR DATABASE FIRST — instant render from our cache if we've seen this movie before
+    try{ const cached=await getCachedTitle(tmdbId); if(cached && sheetId===key && !sheetD){ sheetD=cachedToDetail(cached); rerender(); } }catch(e){}
+    // 2) comments — fetched independently so a slow/rate-limited TMDb never makes them vanish
+    try{ const dbc=await dbFetchComments(tmdbId); if(dbc!=null){ const cc=STATE.community[key]||(STATE.community[key]={summaries:[],reviews:[],comments:[]}); cc.comments=dbc; rerender(); } }catch(e){}
+    if(typeof logActivity==="function") logActivity("open_detail", key, {tmdb:tmdbId});   // log the click
+  }
+  rerender();   // guarantee at least one render (covers local-only titles)
+  // 3) refresh from TMDb in the background, then store/update OUR copy
+  if(tmdbId!=null && tmdbReady()){
+    try{
+      const d=await tmdbDetail(tmdbId);
+      if(sheetId!==key) return;
+      sheetD=d;
+      if(typeof cacheTitle==="function") cacheTitle(d);   // fire-and-forget: build our catalog
       try{ sheetOvr=await fetchOverrides(tmdbId); }catch(e){ sheetOvr={}; }   // admin fixes
-      try{ const dbc=await dbFetchComments(tmdbId); if(dbc!=null){ const cc=STATE.community[key]||(STATE.community[key]={summaries:[],reviews:[],comments:[]}); cc.comments=dbc; } }catch(e){}   // shared DB comments
       if(d && !MOVIE_BY_ID[key]) tmdbToMovie({id:d.id,title:d.title,release_date:d.release_date,poster_path:d.poster_path,vote_average:d.vote_average,popularity:d.popularity,genre_ids:(d.genres||[]).map(g=>g.id),overview:d.overview});
       if(d && d.belongs_to_collection && d.belongs_to_collection.id){
         try{ sheetColId=d.belongs_to_collection.id; const col=await tmdbFetch("/collection/"+sheetColId);
           sheetParts=(col.parts||[]).filter(p=>p.release_date); }catch(e){}
       }
-    }
-  }catch(e){}
-  if(sheetId!==key) return;
-  renderSheet(key);
+      rerender();
+    }catch(e){ rerender(); }
+  }
 }
 function renderSheet(id){
   const sheet=document.getElementById("msheet"); if(!sheet) return;
@@ -2323,6 +2335,7 @@ function updateSearch(){
       let tm=[]; let tmErr="";
       try{ tm=await tmdbSearch(myQ); }catch(e){ tmErr=e.message||"TMDb unavailable"; }
       if(searchQ.trim()!==myQ) return;                     // a newer keystroke won
+      if(typeof logSearch==="function") logSearch(myQ, qm?"quote":"title");   // train the search layer
       const skip=new Set([...localTitles]); if(quoteHit) skip.add((quoteHit.hit.title||"").toLowerCase());
       const tmF=tm.filter(t=>!skip.has((t.title||"").toLowerCase()));
       let html="";
@@ -3790,6 +3803,47 @@ async function notifBroadcast(title,body){
   if(!SB||!CLOUD_ADMIN) return {error:"not admin"};
   try{ const {error}=await SB.from("announcements").insert({ title, body, created_by:CLOUD_USER.id }); return {error}; }catch(e){ return {error:e}; }
 }
+// ---- OUR MOVIE CACHE (build our own catalog; load from our DB first, refresh from TMDb after) ----
+async function getCachedTitle(tmdbId){
+  if(!SB||!tmdbId) return null;
+  try{ const {data}=await SB.from("titles").select("*").eq("tmdb_id",tmdbId).maybeSingle(); return data||null; }catch(e){ return null; }
+}
+function cachedToDetail(row){
+  if(!row) return null;
+  return {
+    id:row.tmdb_id, title:row.title, release_date:(row.year? (row.year+"-01-01"):""),
+    poster_path:row.poster_path, backdrop_path:row.backdrop_path, overview:row.overview,
+    genres:(row.genres||[]).map(n=>({name:n})), vote_average:row.vote_average, runtime:row.runtime,
+    credits:{ cast:(row.cast_names||[]).map(n=>({name:n})),
+      crew:(row.director? String(row.director).split(", ").filter(Boolean).map(n=>({job:"Director",name:n})):[]) },
+    "watch/providers":{ results:{ US: row.providers||{} } },
+    belongs_to_collection:(row.data&&row.data.collection)||null,
+    videos:(row.data&&row.data.videos)||null,
+    _cached:true
+  };
+}
+function cacheTitle(d){
+  if(!SB||!CLOUD_USER||!d||!d.id) return;   // only signed-in users write to the shared catalog
+  try{
+    const cast=((d.credits&&d.credits.cast)||[]).slice(0,8).map(p=>p.name);
+    const dir=((d.credits&&d.credits.crew)||[]).filter(p=>p.job==="Director").map(p=>p.name).join(", ");
+    const wp=(d["watch/providers"]&&d["watch/providers"].results&&d["watch/providers"].results.US)||{};
+    SB.from("titles").upsert({
+      tmdb_id:d.id, title:d.title||null, year:parseInt((d.release_date||"").slice(0,4))||null,
+      poster_path:d.poster_path||null, backdrop_path:d.backdrop_path||null, overview:d.overview||null,
+      genres:(d.genres||[]).map(g=>g.name), vote_average:d.vote_average||null, runtime:d.runtime||null,
+      cast_names:cast, director:dir||null, providers:wp,
+      data:{ collection:d.belongs_to_collection||null, videos:d.videos||null },
+      updated_at:new Date().toISOString()
+    }, {onConflict:"tmdb_id"}).then(()=>{}, ()=>{});
+  }catch(e){}
+}
+// log a search into the learning DB (what people look for -> smarter search over time)
+function logSearch(query, type, chosenTmdbId){
+  if(!SB||!CLOUD_USER||!query) return;
+  try{ SB.from("search_history").insert({ user_id:CLOUD_USER.id, query:String(query).slice(0,200),
+    query_type:type||"title", chosen_tmdb_id:chosenTmdbId||null }); }catch(e){}
+}
 // ---- COMMENTS in the database (persist + shared across everyone) ----
 function tmdbNum(id){ return (id&&String(id).indexOf("tmdb_")===0)?+String(id).slice(5):null; }
 async function dbFetchComments(tmdbId){
@@ -3814,7 +3868,7 @@ async function dbFlagComment(commentDbId){
   try{ const {error}=await SB.from("comment_flags").insert({ comment_id:commentDbId, user_id:CLOUD_USER.id }); return {error}; }catch(e){ return {error:e}; }
 }
 // --- auth actions ---
-async function cloudSignUp(email,pass){ if(!SB) return {error:"offline"}; const {data,error}=await SB.auth.signUp({email,password:pass}); if(!error&&data.user){ CLOUD_USER=data.user; } return {data,error}; }
+async function cloudSignUp(email,pass){ if(!SB) return {error:"offline"}; const {data,error}=await SB.auth.signUp({email,password:pass}); if(!error&&data&&data.session&&data.user){ CLOUD_USER=data.user; } return {data,error}; }
 async function cloudSignIn(email,pass){ if(!SB) return {error:"offline"}; const {data,error}=await SB.auth.signInWithPassword({email,password:pass}); if(!error&&data.user){ CLOUD_USER=data.user; await pullCloud(); pushCloud(); notifWeeklyNudge(); notifLoad(); } return {data,error}; }
 async function cloudSignOut(){ if(!SB) return; await SB.auth.signOut(); CLOUD_USER=null; CLOUD_ADMIN=false; notifLoad(); if(typeof renderTab==="function") renderTab(); }
 // ---- ADMIN (power user): review corrections + publish title fixes ----
@@ -3953,7 +4007,16 @@ function renderAccount(){
   const rst=app.querySelector("#acReset"); if(rst) rst.onclick=()=>{ if(confirm("Reset ALL your data on this device (picks, history, profile)?") && confirm("Are you sure? This can't be undone.")){ STATE=DEFAULT_STATE(); onboardIdx=0; onboardQueue=[]; save(); renderWelcome(); } };
   const afterAuth=()=>{ STATE.guest=false; STATE.onboarded=true; save(); if(fromWelcome){ fromWelcome=false; TAB="pick"; renderTab(); } else renderAccount(); };
   const li=app.querySelector("#acLogin"); if(li) li.onclick=async()=>{ const e=app.querySelector("#acEmail").value.trim(), p=app.querySelector("#acPass").value; if(!e||!p){msg("Enter email + password.");return;} msg("Logging in…"); const r=await cloudSignIn(e,p); if(r.error){msg("❌ "+(r.error.message||r.error));} else { toast("✅ Signed in"); afterAuth(); } };
-  const su=app.querySelector("#acSignup"); if(su) su.onclick=async()=>{ const e=app.querySelector("#acEmail").value.trim(), p=app.querySelector("#acPass").value; if(!e||p.length<6){msg("Enter email + a 6+ char password.");return;} msg("Creating account…"); const r=await cloudSignUp(e,p); if(r.error){msg("❌ "+(r.error.message||r.error));} else if(r.data&&r.data.session){ await pullCloud(); pushCloud(); toast("🎉 Account created"); afterAuth(); } else { msg("📧 Check your email to confirm, then log in."); } };
+  const su=app.querySelector("#acSignup"); if(su) su.onclick=async()=>{
+    const e=app.querySelector("#acEmail").value.trim(), p=app.querySelector("#acPass").value;
+    if(!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(e)){ msg("Enter a real email address (like name@email.com)."); return; }
+    if(p.length<6){ msg("Password needs at least 6 characters."); return; }
+    msg("Creating account…");
+    const r=await cloudSignUp(e,p);
+    if(r.error){ const m=(r.error.message||String(r.error)); msg("❌ "+(/already regist/i.test(m)?"That email already has an account — try logging in.":m)); }
+    else if(r.data&&r.data.session){ await pullCloud(); pushCloud(); toast("🎉 Account created"); afterAuth(); }
+    else { msg("📧 Account made — check that email to confirm, then log in."); }
+  };
   bindHeader();
 }
 
