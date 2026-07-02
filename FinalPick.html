@@ -90,6 +90,9 @@
   .urail-badge{position:absolute;left:0;right:0;bottom:0;background:#7c5cffdd;color:#fff;font-size:10px;font-weight:800;text-align:center;padding:2px 0}
   .urail-t{font-size:11px;font-weight:700;color:var(--ink);margin-top:5px;line-height:1.25;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
   .urail-y{font-size:10px;color:var(--muted)}
+  .tchip{font-size:11.5px;font-weight:700;padding:6px 12px;border-radius:999px;border:1px solid #5a4a86;
+    background:#ffffff0c;color:#c9bff0;cursor:pointer;white-space:nowrap}
+  .tchip.on{background:#7c5cff;border-color:#7c5cff;color:#fff}
   .nbadge{position:absolute;top:2px;right:calc(50% - 20px);min-width:16px;height:16px;padding:0 4px;border-radius:999px;
     background:#ff3b5c;color:#fff;font-size:10px;font-weight:800;line-height:16px;text-align:center;box-shadow:0 0 0 2px var(--bg)}
   .notif-item{display:flex;gap:12px;align-items:flex-start;padding:13px 12px;border:1px solid var(--line);
@@ -1176,7 +1179,7 @@ function playTrailer(key){
   document.getElementById("trClose").onclick=closeTrailer;
 }
 function closeTrailer(){ const ov=document.getElementById("trailerov"); if(ov){ ov.classList.remove("open"); setTimeout(()=>ov.remove(),250); } }
-let sheetId=null,sheetD=null,sheetParts=null,sheetSpoil=false,sheetVerif=true,sheetColId=null,sheetOrder="story",sheetHeroMuted=true,sheetReplyIdx=null,sheetReport=false,sheetOvr={},sheetCompose=false,sheetComposeSpoiler=false,sheetWorld=null;
+let sheetId=null,sheetD=null,sheetParts=null,sheetSpoil=false,sheetVerif=true,sheetColId=null,sheetOrder="story",sheetHeroMuted=true,sheetReplyIdx=null,sheetReport=false,sheetOvr={},sheetCompose=false,sheetComposeSpoiler=false,sheetWorld=null,sheetTrack=null;
 // admin title fixes (title_overrides) for the open movie: {field: value}
 async function fetchOverrides(tmdbId){
   const out={}; if(typeof SB==="undefined"||!SB||!tmdbId) return out;
@@ -1236,7 +1239,7 @@ async function openMovieSheet(id){
   if(typeof id==="number"){ tmdbId=id; key="tmdb_"+id; }
   else if(String(id).indexOf("tmdb_")===0){ tmdbId=+String(id).slice(5); key=String(id); }
   else { key=String(id); }
-  sheetId=key; sheetSpoil=false; sheetD=null; sheetParts=null; sheetColId=null; sheetReplyIdx=null; sheetReport=false; sheetOvr={}; sheetCompose=false; sheetComposeSpoiler=false; sheetWorld=null;
+  sheetId=key; sheetSpoil=false; sheetD=null; sheetParts=null; sheetColId=null; sheetReplyIdx=null; sheetReport=false; sheetOvr={}; sheetCompose=false; sheetComposeSpoiler=false; sheetWorld=null; sheetTrack=null;
   const sheet=document.getElementById("msheet"), back=document.getElementById("mback");
   sheet.innerHTML=`<div class="msheet"><div class="grab" id="msGrab"></div><div class="empty" style="padding:50px 0">Loading…</div></div>`;
   back.classList.remove("hidden"); sheet.classList.remove("hidden");
@@ -1310,20 +1313,34 @@ function renderSheet(id){
       <div class="th" style="background:${p.poster_path?`#000 center/cover url('${tmdbPoster(p.poster_path,'w185')}')`:'#222'}"></div>
       <div style="min-width:0"><div class="t">${i+1}. ${esc(p.title)} <span class="muted" style="font-weight:500">${tmdbYear(p.release_date)}</span></div>
         <div class="s">${p.id===here?"▶ You're here":"tap to open"}</div></div></div>`).join("") : '';
-  // shared universe ("world") rail
+  // shared universe ("world") rail — with character tracks (whole timeline vs by-character) + other timelines (eras)
   const wd=sheetWorld;
   const curId=tmdbNum(id)||(d&&d.id)||null;
-  const worldHTML = (wd && wd.members && wd.members.length>1) ? `
+  let worldHTML='';
+  if(wd && wd.members && wd.members.length>1){
+    const tracks=[...new Set(wd.members.map(m=>m.track).filter(Boolean))];
+    const active = (sheetTrack && tracks.includes(sheetTrack)) ? sheetTrack : null;   // null = whole timeline
+    const shown = active ? wd.members.filter(m=>m.track===active) : wd.members;
+    const railCard = m=>{ const hereW=m.tmdb_id===curId; const pos=m.poster_path?tmdbPoster(m.poster_path,"w185"):"";
+      return `<div class="urail-i${hereW?' on':''}" data-tid="${m.tmdb_id}">
+        <div class="urail-p" style="background:${pos?`#000 center/cover url('${pos}')`:'#222'}">${hereW?`<span class="urail-badge">▶ Here</span>`:''}</div>
+        <div class="urail-t">${esc(m.title||'')}</div><div class="urail-y">${m.year||''}</div></div>`; };
+    const trackChips = tracks.length ? `<div class="wrow" style="margin:2px 0 11px">
+        <button class="tchip${!active?' on':''}" data-track="">🌐 Whole timeline</button>
+        ${tracks.map(t=>`<button class="tchip${active===t?' on':''}" data-track="${esc(t)}">${esc(t)}</button>`).join("")}
+      </div>` : '';
+    const sibHTML = (wd.siblings&&wd.siblings.length) ? `<div style="margin-top:12px">
+        <span class="muted" style="font-size:10px;font-weight:800;letter-spacing:.04em">🕰️ OTHER TIMELINES</span>
+        <div class="wrow" style="margin-top:6px">${wd.siblings.map(s=>`<button class="wbtn" data-tid="${s.firstTmdb}">${esc(s.emoji||'🎬')} ${esc(s.era_label||s.name)} →</button>`).join("")}</div></div>` : '';
+    worldHTML = `
     <div class="panel" style="margin-top:16px;border-color:#4a3a6e;background:linear-gradient(180deg,#1b1533,#12101f)">
-      <div style="font-size:14px;font-weight:800">${wd.world.emoji||'🌌'} ${esc(wd.world.name)}</div>
+      <div style="font-size:14px;font-weight:800">${wd.world.emoji||'🌌'} ${esc(wd.world.name)}${active?` · <span style="color:#b9a5ff">${esc(active)}</span>`:''}</div>
       ${wd.world.note?`<div class="muted" style="font-size:11.5px;margin:3px 0 11px">${esc(wd.world.note)}</div>`:`<div style="height:9px"></div>`}
-      <div class="urail">${wd.members.map(m=>{
-        const hereW=m.tmdb_id===curId; const pos=m.poster_path?tmdbPoster(m.poster_path,"w185"):"";
-        return `<div class="urail-i${hereW?' on':''}" data-tid="${m.tmdb_id}">
-          <div class="urail-p" style="background:${pos?`#000 center/cover url('${pos}')`:'#222'}">${hereW?`<span class="urail-badge">▶ Here</span>`:''}</div>
-          <div class="urail-t">${esc(m.title||'')}</div><div class="urail-y">${m.year||''}</div></div>`;
-      }).join("")}</div>
-    </div>` : '';
+      ${trackChips}
+      <div class="urail">${shown.map(railCard).join("")}</div>
+      ${sibHTML}
+    </div>`;
+  }
   // comments
   const viscO=c.comments.map((x,i)=>({x,i})).filter(o=> sheetVerif ? o.x.verified!==false : true);
   const cleanO=viscO.filter(o=>!o.x.spoiler), spoilO=viscO.filter(o=>o.x.spoiler);
@@ -1434,6 +1451,7 @@ function renderSheet(id){
   const rpt=document.getElementById("shReport"); if(rpt) rpt.onclick=()=>{ sheetReport=!sheetReport; renderSheet(id); };
   sheet.querySelectorAll("[data-report]").forEach(el=>el.onclick=()=>reportCorrection(id, el.dataset.report));
   sheet.querySelectorAll("[data-tid]").forEach(el=>el.onclick=()=>openMovieSheet(+el.dataset.tid));
+  sheet.querySelectorAll("[data-track]").forEach(el=>el.onclick=()=>{ sheetTrack=el.dataset.track||null; renderSheet(id); });
   sheet.querySelectorAll("[data-srate]").forEach(el=>el.onclick=()=>{
     const ev=el.dataset.srate, p=STATE.profiles.me;
     if(ev==="saved"){
@@ -3868,12 +3886,18 @@ function logSearch(query, type, chosenTmdbId){
 async function worldFor(tmdbId){
   if(!SB||!tmdbId) return null;
   try{
-    const {data:hit}=await SB.from("world_titles").select("world_id").eq("tmdb_id",tmdbId).maybeSingle();
+    const {data:hit}=await SB.from("world_titles").select("world_id,track").eq("tmdb_id",tmdbId).maybeSingle();
     if(!hit) return null;
     const {data:w}=await SB.from("worlds").select("*").eq("id",hit.world_id).maybeSingle();
-    const {data:members}=await SB.from("world_titles").select("tmdb_id,title,year,poster_path,sort").eq("world_id",hit.world_id).order("sort",{ascending:true});
+    const {data:members}=await SB.from("world_titles").select("tmdb_id,title,year,poster_path,sort,track").eq("world_id",hit.world_id).order("sort",{ascending:true});
     if(!w||!members||!members.length) return null;
-    return {world:w, members};
+    let siblings=[];
+    if(w.franchise){   // other continuities/timelines of the same franchise
+      const {data:sibs}=await SB.from("worlds").select("id,name,emoji,era_label").eq("franchise",w.franchise).neq("id",w.id);
+      for(const s of (sibs||[])){ try{ const {data:ff}=await SB.from("world_titles").select("tmdb_id").eq("world_id",s.id).order("sort",{ascending:true}).limit(1); s.firstTmdb=ff&&ff[0]&&ff[0].tmdb_id; }catch(e){} }
+      siblings=(sibs||[]).filter(s=>s.firstTmdb);
+    }
+    return {world:w, members, siblings, curTrack:hit.track||null};
   }catch(e){ return null; }
 }
 // ---- COMMENTS in the database (persist + shared across everyone) ----
