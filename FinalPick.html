@@ -266,9 +266,9 @@
   /* movie quick-view slide-up sheet */
   #mback{position:fixed;inset:0;z-index:65;background:#000b;opacity:0;pointer-events:none;transition:opacity .3s ease;backdrop-filter:blur(3px)}
   #mback.open{opacity:1;pointer-events:auto} #mback.hidden{display:none}
-  #msheet{position:fixed;left:0;right:0;bottom:0;z-index:70;display:flex;justify-content:center;transform:translateY(110%);transition:transform .36s cubic-bezier(.32,.72,0,1);pointer-events:none}
+  #msheet{position:fixed;left:0;right:0;bottom:var(--kb,0px);z-index:70;display:flex;justify-content:center;transform:translateY(110%);transition:transform .36s cubic-bezier(.32,.72,0,1);pointer-events:none}
   #msheet.open{transform:translateY(0);pointer-events:auto} #msheet.hidden{display:none}
-  #msheet .msheet{width:100%;max-width:460px;max-height:90vh;overflow-y:auto;background:linear-gradient(180deg,#151f38,#0b0f1c);border:1px solid #273150;border-bottom:0;border-radius:24px 24px 0 0;padding:8px 16px calc(18px + env(safe-area-inset-bottom,0px));box-shadow:0 -20px 50px -14px #000e}
+  #msheet .msheet{width:100%;max-width:460px;max-height:calc(92vh - var(--kb,0px));overflow-y:auto;background:linear-gradient(180deg,#151f38,#0b0f1c);border:1px solid #273150;border-bottom:0;border-radius:24px 24px 0 0;padding:8px 16px calc(18px + env(safe-area-inset-bottom,0px));box-shadow:0 -20px 50px -14px #000e}
   #msheet .grab{width:44px;height:5px;border-radius:5px;background:#394260;margin:4px auto 10px;cursor:pointer}
   .mshero{height:200px;border-radius:15px;background:#161c2e center/cover;border:1px solid var(--line);position:relative;overflow:hidden}
   .mshero-vid{position:absolute;inset:0;width:100%;height:100%;border:0;pointer-events:none}
@@ -3588,6 +3588,23 @@ function closeNav(){
 }
 document.getElementById("navback").onclick=closeNav;
 document.getElementById("mback").onclick=closeSheet;
+// --- mobile keyboard handling: lift sheets above the on-screen keyboard & keep the focused field visible ---
+(function(){
+  const vv=window.visualViewport;
+  if(vv){
+    const onVV=()=>{
+      const kb=Math.max(0, Math.round(window.innerHeight - vv.height - vv.offsetTop));
+      document.documentElement.style.setProperty("--kb", kb+"px");
+    };
+    vv.addEventListener("resize", onVV); vv.addEventListener("scroll", onVV); onVV();
+  }
+  document.addEventListener("focusin", e=>{
+    const el=e.target;
+    if(!el || !(el.matches && el.matches("input, textarea"))) return;
+    if(!el.closest("#msheet, #navsheet, #app")) return;
+    setTimeout(()=>{ try{ el.scrollIntoView({block:"center", behavior:"smooth"}); }catch(_){ } }, 320);
+  });
+})();
 // tap any comment author's name -> open their profile
 document.addEventListener("click",e=>{ const u=e.target.closest&&e.target.closest("[data-user]"); if(u){ e.preventDefault(); e.stopPropagation(); openPerson(u.getAttribute("data-user")); } },true);
 // tap a blurred spoiler in a timeline -> reveal it
