@@ -1,0 +1,20 @@
+# LastPick — Netlify config
+# Serves the app at "/" and runs the TMDb key-proxy function.
+
+[build]
+  publish = "."
+
+[functions]
+  directory = "netlify/functions"
+
+# make the root URL load the app
+[[redirects]]
+  from = "/"
+  to = "/FinalPick.html"
+  status = 200
+
+# keep the internal notes/plan files private (not served publicly)
+[[redirects]]
+  from = "/*.md"
+  to = "/404.html"
+  status = 404
