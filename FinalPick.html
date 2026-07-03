@@ -932,9 +932,11 @@ function renderWelcome(){
       <div class="muted" style="font-size:12px;margin:8px 2px 20px">Jump right in — no signup, nothing saved.</div>
       <button class="btn secondary" id="wAccount" style="font-size:16px;padding:16px">👤 &nbsp;Create account / Log in</button>
       <div class="muted" style="font-size:12px;margin-top:8px">Save your picks, history &amp; profile across devices.</div>
+      <div style="max-width:340px;margin:0 auto;width:100%">${OAUTH_BTNS}</div>
     </div>`;
   app.querySelector("#wGuest").onclick=()=>{ STATE.onboarded=true; STATE.guest=true; save(); TAB="pick"; renderTab(); };
   app.querySelector("#wAccount").onclick=()=>{ STATE.onboarded=true; STATE.guest=false; save(); fromWelcome=true; renderAccount(); };
+  bindOAuth(app);
 }
 let fromWelcome=false;
 function renderOnboard(){
@@ -3689,6 +3691,22 @@ function cloudUsername(){ // show the username, not the synthetic email
   if(STATE.profile&&STATE.profile.username) return STATE.profile.username;
   const e=cloudEmail()||""; return e.indexOf(USER_DOMAIN)>0 ? e.slice(0,e.indexOf(USER_DOMAIN)) : e;
 }
+// social / OAuth login (Google, Discord, Facebook…) — provider must be enabled in Supabase
+async function cloudOAuth(provider){
+  if(!SB){ toast("Cloud unavailable right now."); return; }
+  try{
+    STATE.onboarded=true; STATE.guest=false; save();
+    const {error}=await SB.auth.signInWithOAuth({ provider, options:{ redirectTo: location.origin+location.pathname } });
+    if(error) toast("❌ "+(/provider is not enabled/i.test(error.message||"")?(provider+" isn't set up yet."):(error.message||provider)));
+  }catch(e){ toast("Couldn't start "+provider+" login."); }
+}
+const OAUTH_BTNS=`<div class="muted" style="font-size:12px;margin:18px 0 9px">or continue with</div>
+  <div style="display:flex;gap:8px">
+    <button class="btn secondary" data-oauth="google" style="flex:1;font-size:13px">🟦 Google</button>
+    <button class="btn secondary" data-oauth="discord" style="flex:1;font-size:13px">🎮 Discord</button>
+    <button class="btn secondary" data-oauth="facebook" style="flex:1;font-size:13px">📘 Facebook</button>
+  </div>`;
+function bindOAuth(scope){ (scope||document).querySelectorAll("[data-oauth]").forEach(el=>el.onclick=()=>cloudOAuth(el.dataset.oauth)); }
 function isAdmin(){ return !!CLOUD_ADMIN; }
 
 // --- pull the signed-in user's profile + preferences from the DB into STATE ---
@@ -3966,6 +3984,7 @@ function renderAccount(){
         </div>
         <div id="acMsg" class="muted" style="font-size:12.5px;margin-top:10px;min-height:16px"></div>
         <div class="muted" style="font-size:11.5px;margin-top:4px">Your account keeps your data safe and lets you use LastPick on any device.</div>
+        ${OAUTH_BTNS}
       </div>`}
     <details style="margin-top:22px">
       <summary style="font-size:12px;color:var(--muted);cursor:pointer;list-style:none">⚙️ Advanced settings</summary>
@@ -3999,6 +4018,7 @@ function renderAccount(){
     else if(r.data&&r.data.session){ STATE.profile=STATE.profile||{}; if(!isEmail){ STATE.profile.username=u; if(!STATE.profile.name||STATE.profile.name==="Movie Fan") STATE.profile.name=u; } await pullCloud(); pushCloud(); toast("🎉 Account created"); afterAuth(); }
     else { msg("Account made — now log in."); }
   };
+  bindOAuth(app);
   bindHeader();
 }
 
