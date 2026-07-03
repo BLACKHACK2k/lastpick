@@ -1317,7 +1317,7 @@ function renderSheet(id){
   const wd=sheetWorld;
   const curId=tmdbNum(id)||(d&&d.id)||null;
   let worldHTML='';
-  if(wd && wd.members && wd.members.length>1){
+  if(wd && wd.members && wd.members.length && (wd.members.length>1 || (wd.siblings && wd.siblings.length))){
     const tracks=[...new Set(wd.members.map(m=>m.track).filter(Boolean))];
     const active = (sheetTrack && tracks.includes(sheetTrack)) ? sheetTrack : null;   // null = whole timeline
     const shown = active ? wd.members.filter(m=>m.track===active) : wd.members;
@@ -3621,11 +3621,11 @@ function openNav(){
   const grid=NAV.map(([t,ic,l])=>`<div class="navitem ${cur===t?'on':''}" data-go="${t}"><span class="ic">${ic}</span>${l}</div>`).join("");
   const sheet=document.getElementById("navsheet");
   sheet.innerHTML=`<div class="sheet"><div class="grab" id="navGrab"></div>
-    ${(typeof CLOUD_USER!=="undefined"&&CLOUD_USER)?`<div style="background:#22d37a1e;border:1px solid #22d37a55;border-radius:12px;padding:10px 13px;margin-bottom:12px;font-size:12.5px;font-weight:600">✅ Signed in as ${esc(cloudEmail()||"you")} — everything's saving.</div>`:`<div id="navGuest" style="background:#3b8cff1e;border:1px solid #3b8cff66;border-radius:12px;padding:11px 13px;margin-bottom:12px;cursor:pointer"><div style="font-size:13px;font-weight:800">👤 Browsing as a guest</div><div class="muted" style="font-size:11.5px;margin-top:2px">Nothing's saved on this device only. Tap to create a free account and keep your picks, history &amp; profile across devices.</div></div>`}
+    ${(typeof CLOUD_USER!=="undefined"&&CLOUD_USER)?`<div style="background:#22d37a1e;border:1px solid #22d37a55;border-radius:12px;padding:10px 13px;margin-bottom:12px;font-size:12.5px;font-weight:600">✅ Signed in as ${esc(cloudUsername()||"you")} — everything's saving.</div>`:`<div id="navGuest" style="background:#3b8cff1e;border:1px solid #3b8cff66;border-radius:12px;padding:11px 13px;margin-bottom:12px;cursor:pointer"><div style="font-size:13px;font-weight:800">👤 Browsing as a guest</div><div class="muted" style="font-size:11.5px;margin-top:2px">Nothing's saved on this device only. Tap to create a free account and keep your picks, history &amp; profile across devices.</div></div>`}
     <button class="btn secondary" id="navNotifs" style="margin-bottom:14px;display:flex;align-items:center;justify-content:center;gap:8px">🔔 Notifications${NOTIF.unread>0?`<span style="background:#ff3b5c;color:#fff;font-size:11px;font-weight:800;border-radius:999px;padding:1px 8px">${NOTIF.unread>9?'9+':NOTIF.unread}</span>`:''}</button>
     <div class="muted" style="font-size:12px;font-weight:700;margin:0 2px 12px">GO TO…</div>
     <div class="navgrid">${grid}</div>
-    <button class="btn" id="navAccount" style="margin-top:14px">${CLOUD_USER?("👤 "+esc((cloudEmail()||"Account"))):"👤 Log in / Sign up"}</button>
+    <button class="btn" id="navAccount" style="margin-top:14px">${CLOUD_USER?("👤 "+esc((cloudUsername()||"Account"))):"👤 Log in / Sign up"}</button>
     <button class="btn" id="navKids" style="margin-top:10px;background:linear-gradient(135deg,#ff8a5b,#ffd23f);color:#3a1d00">🧸 Kids Mode</button></div>`;
   sheet.classList.remove("hidden");
   const back=document.getElementById("navback"); back.classList.remove("hidden");
@@ -3681,6 +3681,14 @@ let SB=null, CLOUD_USER=null, CLOUD_ADMIN=false;
 try{ if(window.supabase&&window.supabase.createClient) SB=window.supabase.createClient(SB_URL,SB_KEY); }catch(e){}
 function cloudReady(){ return !!SB; }
 function cloudEmail(){ return CLOUD_USER&&CLOUD_USER.email; }
+// usernames map to a hidden internal email so people log in with just a name (no real email needed)
+const USER_DOMAIN="@lastpick.app";
+function cleanUsername(u){ return String(u||"").trim().toLowerCase().replace(/[^a-z0-9_]/g,""); }
+function usernameToEmail(u){ return cleanUsername(u)+USER_DOMAIN; }
+function cloudUsername(){ // show the username, not the synthetic email
+  if(STATE.profile&&STATE.profile.username) return STATE.profile.username;
+  const e=cloudEmail()||""; return e.indexOf(USER_DOMAIN)>0 ? e.slice(0,e.indexOf(USER_DOMAIN)) : e;
+}
 function isAdmin(){ return !!CLOUD_ADMIN; }
 
 // --- pull the signed-in user's profile + preferences from the DB into STATE ---
@@ -3698,6 +3706,7 @@ async function pullCloud(){
       || (typeof myFaves==="function" && myFaves().length);
     if(dbHas){
       // the account already has a saved profile -> load it onto this device
+      if(prof.username) STATE.profile.username=prof.username;
       if(prof.display_name) STATE.profile.name=prof.display_name;
       if(prof.bio!=null) STATE.profile.bio=prof.bio;
       if(prof.cover_tmdb_id!=null) STATE.profile.cover="tmdb_"+prof.cover_tmdb_id;
@@ -3750,7 +3759,7 @@ function pushCloud(){
       const library={ events:me.events||{}, watchlist:me.watchlist||[], never:me.never||[] };
       await SB.from("profiles").upsert({ id:CLOUD_USER.id, display_name:p.name||"Movie Fan", bio:p.bio||"",
         avatar_genre:(typeof topGenreOf==="function")?topGenreOf("You"):null, cover_tmdb_id:cover,
-        top10:(typeof myFaves==="function")?myFaves().map(f=>f.id):[], genre_top:p.genreTop||{}, library });
+        top10:(typeof myFaves==="function")?myFaves().map(f=>f.id):[], genre_top:p.genreTop||{}, library, username:p.username||null });
       await SB.from("preferences").upsert({ user_id:CLOUD_USER.id, services:STATE.services||[],
         watch_pref:STATE.watchPref||"all", min_year:STATE.minYear||0, keep_spin:!!(STATE.context&&STATE.context.keepSpin) });
     }catch(e){}
@@ -3944,12 +3953,12 @@ function renderAccount(){
     ${!cloudReady()?`<div class="empty">No connection. Everything you do is saved on this device.</div>`:
       signedIn?`
       <div class="panel">
-        <div style="font-size:14px;font-weight:700">✅ ${esc(cloudEmail()||"Signed in")}</div>
+        <div style="font-size:14px;font-weight:700">✅ ${esc(cloudUsername()||"Signed in")}</div>
         <div class="muted" style="font-size:12.5px;margin-top:4px">Profile, preferences and watch history are syncing to your account.</div>
         <button class="btn secondary" id="acSignOut" style="margin-top:14px">Log out</button>
       </div>`:`
       <div class="panel">
-        <input id="acEmail" type="email" autocomplete="email" placeholder="Email" style="width:100%;background:#191c2b;border:1px solid var(--line);border-radius:12px;color:var(--ink);font-size:15px;padding:12px 13px;outline:none">
+        <input id="acEmail" type="text" autocomplete="username" autocapitalize="none" placeholder="Username" style="width:100%;background:#191c2b;border:1px solid var(--line);border-radius:12px;color:var(--ink);font-size:15px;padding:12px 13px;outline:none">
         <input id="acPass" type="password" autocomplete="current-password" placeholder="Password (6+ characters)" style="width:100%;margin-top:10px;background:#191c2b;border:1px solid var(--line);border-radius:12px;color:var(--ink);font-size:15px;padding:12px 13px;outline:none">
         <div class="row" style="gap:8px;margin-top:12px;flex-wrap:nowrap">
           <button class="btn" id="acLogin" style="flex:1">Log in</button>
@@ -3971,16 +3980,21 @@ function renderAccount(){
   const so=app.querySelector("#acSignOut"); if(so) so.onclick=async()=>{ await cloudSignOut(); renderAccount(); };
   const rst=app.querySelector("#acReset"); if(rst) rst.onclick=()=>{ if(confirm("Reset ALL your data on this device (picks, history, profile)?") && confirm("Are you sure? This can't be undone.")){ STATE=DEFAULT_STATE(); onboardIdx=0; onboardQueue=[]; save(); renderWelcome(); } };
   const afterAuth=()=>{ STATE.guest=false; STATE.onboarded=true; save(); if(fromWelcome){ fromWelcome=false; TAB="pick"; renderTab(); } else renderAccount(); };
-  const li=app.querySelector("#acLogin"); if(li) li.onclick=async()=>{ const e=app.querySelector("#acEmail").value.trim(), p=app.querySelector("#acPass").value; if(!e||!p){msg("Enter email + password.");return;} msg("Logging in…"); const r=await cloudSignIn(e,p); if(r.error){msg("❌ "+(r.error.message||r.error));} else { toast("✅ Signed in"); afterAuth(); } };
+  const li=app.querySelector("#acLogin"); if(li) li.onclick=async()=>{
+    const u=cleanUsername(app.querySelector("#acEmail").value), p=app.querySelector("#acPass").value;
+    if(!u||!p){ msg("Enter your username + password."); return; }
+    msg("Logging in…"); const r=await cloudSignIn(usernameToEmail(u),p);
+    if(r.error){ msg("❌ "+(/invalid login/i.test(r.error.message||"")?"Wrong username or password.":(r.error.message||r.error))); }
+    else { STATE.profile=STATE.profile||{}; if(!STATE.profile.username) STATE.profile.username=u; toast("✅ Signed in"); afterAuth(); } };
   const su=app.querySelector("#acSignup"); if(su) su.onclick=async()=>{
-    const e=app.querySelector("#acEmail").value.trim(), p=app.querySelector("#acPass").value;
-    if(!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(e)){ msg("Enter a real email address (like name@email.com)."); return; }
+    const raw=app.querySelector("#acEmail").value.trim(), u=cleanUsername(raw), p=app.querySelector("#acPass").value;
+    if(u.length<3){ msg("Pick a username (3+ letters/numbers, no spaces)."); return; }
     if(p.length<6){ msg("Password needs at least 6 characters."); return; }
     msg("Creating account…");
-    const r=await cloudSignUp(e,p);
-    if(r.error){ const m=(r.error.message||String(r.error)); msg("❌ "+(/already regist/i.test(m)?"That email already has an account — try logging in.":m)); }
-    else if(r.data&&r.data.session){ await pullCloud(); pushCloud(); toast("🎉 Account created"); afterAuth(); }
-    else { msg("📧 Account made — check that email to confirm, then log in."); }
+    const r=await cloudSignUp(usernameToEmail(u),p);
+    if(r.error){ const m=(r.error.message||String(r.error)); msg("❌ "+(/already regist/i.test(m)?"That username is taken — pick another.":m)); }
+    else if(r.data&&r.data.session){ STATE.profile=STATE.profile||{}; STATE.profile.username=u; if(!STATE.profile.name||STATE.profile.name==="Movie Fan") STATE.profile.name=u; await pullCloud(); pushCloud(); toast("🎉 Account created"); afterAuth(); }
+    else { msg("Account made — now log in with your username."); }
   };
   bindHeader();
 }
