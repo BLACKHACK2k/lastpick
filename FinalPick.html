@@ -1013,7 +1013,13 @@ function renderServiceSetup(){
 }
 
 /* ---------- MAIN TABS ---------- */
+let _lastRenderedTab=null;
 function renderTab(){
+  // keep your place: re-rendering the SAME screen (a rating, a chip, a background refresh)
+  // shouldn't yank you back to the top. Only a real tab SWITCH resets scroll.
+  const _sameTab=(_lastRenderedTab===TAB);
+  const _y=_sameTab?(window.scrollY||window.pageYOffset||0):0;
+  const _restore=()=>{ _lastRenderedTab=TAB; requestAnimationFrame(()=>{ window.scrollTo(0, _sameTab?_y:0); }); };
   tabbar.classList.remove("hidden");
   tabbar.querySelectorAll("button").forEach(b=>b.classList.toggle("on",b.dataset.tab===TAB));
   // light up Menu when the active section lives inside the slide-up sheet
@@ -1028,9 +1034,10 @@ function renderTab(){
   else if(TAB==="spectrum") renderSpectrum();
   else if(TAB==="watchlist") renderWatchlist();
   else if(TAB==="taste") renderTaste();
-  else if(TAB==="notifs"){ renderNotifs(); return; }
+  else if(TAB==="notifs"){ renderNotifs(); _restore(); return; }
   bindHeader();
   hydratePosters();
+  _restore();
 }
 
 const MOODS=[["scary","😱 Scare me"],["funny","😂 Funny"],["mind_bending","🌀 Mind-bending"],
@@ -3820,7 +3827,7 @@ async function notifLoad(){
     NOTIF.unread=NOTIF.items.filter(n=>!n.read).length;
   }catch(e){}
   notifBadge();
-  if(TAB==="notifs") renderNotifs();
+  if(TAB==="notifs"){ const _y=window.scrollY||window.pageYOffset||0; renderNotifs(); requestAnimationFrame(()=>window.scrollTo(0,_y)); }
 }
 function notifBadge(){
   const btn=document.querySelector('#tabbar [data-nav="menu"]'); if(!btn) return;
@@ -4030,6 +4037,25 @@ function renderAccount(){
   bindOAuth(app);
   bindHeader();
 }
+
+/* ---------- keep scroll position on in-place re-renders ----------
+   These screens re-render themselves when you tap a filter, sort, or an
+   expander (e.g. opening a section on your profile). Rebuilding the page
+   used to snap you back to the top. This wrapper remembers where you were
+   and restores it whenever the SAME screen re-renders; switching to a new
+   screen still starts at the top. */
+(function(){
+  const wrap=fn=>function(){
+    const same=(window.__lastRenderFn===fn);
+    const y=same?(window.scrollY||window.pageYOffset||0):0;
+    const r=fn.apply(this,arguments);
+    window.__lastRenderFn=fn;
+    requestAnimationFrame(()=>{ try{ window.scrollTo(0, same?y:0); }catch(e){} });
+    return r;
+  };
+  renderBrowse=wrap(renderBrowse); renderGenres=wrap(renderGenres); renderTaste=wrap(renderTaste);
+  renderSpectrum=wrap(renderSpectrum); renderRefine=wrap(renderRefine); renderWatchlist=wrap(renderWatchlist);
+})();
 
 /* ---------- boot ---------- */
 load();
