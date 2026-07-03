@@ -973,7 +973,7 @@ function renderOnboard(){
   `;
   app.querySelectorAll(".rate").forEach(el=>el.onclick=()=>{
     const ev=el.dataset.ev;
-    if(ev!=="__skip"){ STATE.profiles.me.events[m.id]=ev; freshProfileObjects(); save(); }
+    if(ev!=="__skip"){ STATE.profiles.me.events[m.id]=ev; freshProfileObjects(); save(); logActivity(ev,m.id,{surface:"onboard"}); }
     onboardIdx++; renderOnboard();
   });
   const done=app.querySelector("#doneOnboard");
@@ -1069,6 +1069,7 @@ function castShown(){
   const pick=curPick, ctx=curCtx||ctxFromState();
   if(!pick){ toast("No pick to cast yet."); return; }
   STATE.profiles.me.events[pick.m.id]="auto_pick"; STATE.accepted++; STATE.picks++; freshProfileObjects(); save();
+  logActivity("auto_pick",pick.m.id,{surface:"spin",ctx:ctx&&ctx.mood||null}); logRecommendation(pick.m.id,"spin","accepted");
   castOverlay(pick.m,ctx,pick);
 }
 
@@ -1764,6 +1765,7 @@ function blockbusterMode(){
   const pick=ranked[0], m=pick.m;
   STATE.picks++; STATE.accepted++; STATE.lastPick=m.id;
   STATE.profiles.me.events[m.id]="auto_pick"; freshProfileObjects(); save();
+  logActivity("auto_pick",m.id,{surface:"pick"}); logRecommendation(m.id,"pick","accepted");
   castOverlay(m,ctx,pick);
 }
 function castOverlay(m,ctx,pick){
@@ -1880,7 +1882,7 @@ function planNight(shuffle){
       </div>
     </div>`;
   out.querySelectorAll("[data-open]").forEach(el=>el.onclick=()=>openMovie(el.dataset.open));
-  app.querySelector("#mnStart").onclick=()=>{ STATE.profiles.me.events[main.m.id]="auto_pick"; STATE.accepted++; STATE.picks++; freshProfileObjects(); save(); castOverlay(main.m,ctx,main); };
+  app.querySelector("#mnStart").onclick=()=>{ STATE.profiles.me.events[main.m.id]="auto_pick"; STATE.accepted++; STATE.picks++; freshProfileObjects(); save(); logActivity("auto_pick",main.m.id,{surface:"movienight"}); logRecommendation(main.m.id,"movienight","accepted"); castOverlay(main.m,ctx,main); };
   app.querySelector("#mnShuffle").onclick=()=>planNight(true);
   out.querySelector("#nightPlan").scrollIntoView({behavior:"smooth",block:"center"});
 }
@@ -3614,6 +3616,7 @@ function renderKids(){
   const w=document.getElementById("kWatch"); if(w) w.onclick=()=>{
     if(!kidPick) return;
     STATE.profiles.me.events[kidPick.id]="completed"; freshProfileObjects(); save();
+    logActivity("completed",kidPick.id,{surface:"kids"}); logRecommendation(kidPick.id,"kids","accepted");
     alert(`🍿 Yay! Enjoy “${kidPick.title}”!\n\nAsk a grown-up to press play. 😊`);
   };
   hydratePosters();
@@ -3788,6 +3791,12 @@ function cloudEvent(id,type,ctx){
   if(!SB||!CLOUD_USER) return;
   const tmdb=(id&&String(id).indexOf("tmdb_")===0)?+String(id).slice(5):null;
   try{ SB.from("events").insert({ user_id:CLOUD_USER.id, tmdb_id:tmdb, local_id:tmdb?null:String(id||""), type:type||"", context:ctx||{} }); }catch(e){}
+}
+// what we recommended + how it landed (closes the algorithm loop -> recommendations table)
+function logRecommendation(id,surface,outcome){
+  if(!SB||!CLOUD_USER||!id) return;
+  const tmdb=(String(id).indexOf("tmdb_")===0)?+String(id).slice(5):null;
+  try{ SB.from("recommendations").insert({ user_id:CLOUD_USER.id, tmdb_id:tmdb, surface:surface||"spin", outcome:outcome||"shown", shown_at:new Date().toISOString() }); }catch(e){}
 }
 // ======================= NOTIFICATIONS (in-app bell) =======================
 let NOTIF={items:[],unread:0};
