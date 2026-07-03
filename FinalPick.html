@@ -3981,20 +3981,23 @@ function renderAccount(){
   const rst=app.querySelector("#acReset"); if(rst) rst.onclick=()=>{ if(confirm("Reset ALL your data on this device (picks, history, profile)?") && confirm("Are you sure? This can't be undone.")){ STATE=DEFAULT_STATE(); onboardIdx=0; onboardQueue=[]; save(); renderWelcome(); } };
   const afterAuth=()=>{ STATE.guest=false; STATE.onboarded=true; save(); if(fromWelcome){ fromWelcome=false; TAB="pick"; renderTab(); } else renderAccount(); };
   const li=app.querySelector("#acLogin"); if(li) li.onclick=async()=>{
-    const u=cleanUsername(app.querySelector("#acEmail").value), p=app.querySelector("#acPass").value;
-    if(!u||!p){ msg("Enter your username + password."); return; }
-    msg("Logging in…"); const r=await cloudSignIn(usernameToEmail(u),p);
+    const raw=app.querySelector("#acEmail").value.trim(), p=app.querySelector("#acPass").value;
+    if(!raw||!p){ msg("Enter your username + password."); return; }
+    const isEmail=raw.indexOf("@")>0; const e=isEmail?raw.toLowerCase():usernameToEmail(raw);
+    msg("Logging in…"); const r=await cloudSignIn(e,p);
     if(r.error){ msg("❌ "+(/invalid login/i.test(r.error.message||"")?"Wrong username or password.":(r.error.message||r.error))); }
-    else { STATE.profile=STATE.profile||{}; if(!STATE.profile.username) STATE.profile.username=u; toast("✅ Signed in"); afterAuth(); } };
+    else { STATE.profile=STATE.profile||{}; if(!isEmail&&!STATE.profile.username) STATE.profile.username=cleanUsername(raw); toast("✅ Signed in"); afterAuth(); } };
   const su=app.querySelector("#acSignup"); if(su) su.onclick=async()=>{
-    const raw=app.querySelector("#acEmail").value.trim(), u=cleanUsername(raw), p=app.querySelector("#acPass").value;
-    if(u.length<3){ msg("Pick a username (3+ letters/numbers, no spaces)."); return; }
+    const raw=app.querySelector("#acEmail").value.trim(), p=app.querySelector("#acPass").value;
+    const isEmail=raw.indexOf("@")>0; const u=cleanUsername(raw);
+    if(!isEmail && u.length<3){ msg("Pick a username (3+ letters/numbers, no spaces)."); return; }
     if(p.length<6){ msg("Password needs at least 6 characters."); return; }
+    const e=isEmail?raw.toLowerCase():usernameToEmail(u);
     msg("Creating account…");
-    const r=await cloudSignUp(usernameToEmail(u),p);
+    const r=await cloudSignUp(e,p);
     if(r.error){ const m=(r.error.message||String(r.error)); msg("❌ "+(/already regist/i.test(m)?"That username is taken — pick another.":m)); }
-    else if(r.data&&r.data.session){ STATE.profile=STATE.profile||{}; STATE.profile.username=u; if(!STATE.profile.name||STATE.profile.name==="Movie Fan") STATE.profile.name=u; await pullCloud(); pushCloud(); toast("🎉 Account created"); afterAuth(); }
-    else { msg("Account made — now log in with your username."); }
+    else if(r.data&&r.data.session){ STATE.profile=STATE.profile||{}; if(!isEmail){ STATE.profile.username=u; if(!STATE.profile.name||STATE.profile.name==="Movie Fan") STATE.profile.name=u; } await pullCloud(); pushCloud(); toast("🎉 Account created"); afterAuth(); }
+    else { msg("Account made — now log in."); }
   };
   bindHeader();
 }
