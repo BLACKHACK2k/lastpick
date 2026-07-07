@@ -1,0 +1,21 @@
+{
+  "name": "Last Pick — Stop scrolling. Start watching.",
+  "short_name": "Last Pick",
+  "description": "Hit spin and we land on your movie. Personalized picks, shared-universe timelines, kids mode, and more.",
+  "id": "/",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "display_override": ["standalone", "minimal-ui"],
+  "orientation": "portrait",
+  "background_color": "#0a0e1a",
+  "theme_color": "#0b0f1c",
+  "lang": "en",
+  "dir": "ltr",
+  "categories": ["entertainment", "lifestyle"],
+  "icons": [
+    { "src": "/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}
