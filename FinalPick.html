@@ -2466,6 +2466,11 @@ const GENRE_ID_BY_NAME=(()=>{ const o={}; for(const id in TMDB_GENRES){ o[TMDB_G
 // hosted (https) -> go through our /api/tmdb function so the key stays server-side.
 // local file:// -> talk to TMDb directly with the built-in key (dev only).
 const TMDB_HOSTED = (location.protocol==="https:" || location.protocol==="http:");
+// In the packaged native app (Capacitor runs at https://localhost) there is no local
+// server, so route the proxy at the live Netlify function. On the website (any real
+// hostname) use the same origin so a custom domain keeps working.
+const LIVE_ORIGIN = "https://lastpick-app.netlify.app";
+const PROXY_ORIGIN = (location.hostname && location.hostname !== "localhost" && /^https?:$/.test(location.protocol)) ? location.origin : LIVE_ORIGIN;
 function tmdbReady(){ return TMDB_HOSTED || !!(STATE.tmdbKey && STATE.tmdbKey.trim()); }
 function tmdbPoster(p,size){ return p?("https://image.tmdb.org/t/p/"+(size||"w342")+p):null; }
 function tmdbYear(d){ return (d||"").slice(0,4); }
@@ -2473,7 +2478,7 @@ async function tmdbFetch(path, params){
   // hosted: try the /api/tmdb server proxy first (keeps the key server-side).
   if(TMDB_HOSTED){
     try{
-      const pu=new URL("/api/tmdb", location.origin); pu.searchParams.set("path", path);
+      const pu=new URL("/api/tmdb", PROXY_ORIGIN); pu.searchParams.set("path", path);
       for(const k in (params||{})) if(params[k]!=null) pu.searchParams.set(k,params[k]);
       const pr=await fetch(pu.toString(),{headers:{Accept:"application/json"}});
       if(pr.ok) return pr.json();
@@ -3720,7 +3725,11 @@ async function cloudOAuth(provider){
     if(error) toast("❌ "+(/provider is not enabled/i.test(error.message||"")?(provider+" isn't set up yet."):(error.message||provider)));
   }catch(e){ toast("Couldn't start "+provider+" login."); }
 }
-const OAUTH_BTNS=`<div class="muted" style="font-size:12px;margin:18px 0 9px">or continue with</div>
+// Detect the packaged native app (Capacitor). In the App Store build we hide the
+// third-party social logins: they trigger Apple's "Sign in with Apple" rule (4.8)
+// and aren't configured yet. Email/username sign-in stays. Website is unaffected.
+const IS_NATIVE = !!(window.Capacitor && (window.Capacitor.isNativePlatform ? window.Capacitor.isNativePlatform() : (window.Capacitor.platform && window.Capacitor.platform!=="web"))) || location.hostname==="localhost";
+const OAUTH_BTNS = IS_NATIVE ? "" : `<div class="muted" style="font-size:12px;margin:18px 0 9px">or continue with</div>
   <div style="display:flex;gap:8px">
     <button class="btn secondary" data-oauth="google" style="flex:1;font-size:13px">🟦 Google</button>
     <button class="btn secondary" data-oauth="discord" style="flex:1;font-size:13px">🎮 Discord</button>
